@@ -1,19 +1,48 @@
-import { createSlice } from "@reduxjs/toolkit";
+import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
+import { fetchHabits } from "./habitAPI";
 
 type Habit = {
-    id: string;
+    _id: string;
     title: string;
     description: string;
     createAt: string;
-}
+    days: number;
+    lastDone: Date;
+    lastUpdate: Date;
+    startedAt: Date;
+};
 
 type HabitState = {
     habits: Habit [];
-}
+    status: Record<string, "idle" | "loading" | "success" | "failed">;
+    error: Record<string, string | null>;
+};
 
 const initialState: HabitState = {
-    habits: []
-}
+    habits: [],
+    status: {},
+    error: {}
+};
+
+export const fetchHabitsThunk = createAsyncThunk("habit/fetchHabits", async () => {
+        return await fetchHabits();
+});
+
+export const markAsDoneThunk = createAsyncThunk("habit/markAsDone", async (_id: string, {rejectWithValue}) => {
+    const response = await fetch(`http://localhost:3001/api/habits/markasdone${_id}/done`, {
+        method: "POST",
+    });
+    const responseJson = await response.json();
+    if (!response.ok) {
+        return rejectWithValue("Fallo al marcar como hecho");
+    }else if (responseJson.message.toString() === "Habito reiniciado") {
+        return rejectWithValue(responseJson.message);
+    }else{
+        return responseJson;
+    }
+});
+
+
 const habitSlice = createSlice ({
     name: "habit",
     initialState,
@@ -26,9 +55,29 @@ const habitSlice = createSlice ({
         addHabit: (state, action) => {
             state.habits.push(action.payload);
         },
+
         removeHabit: (state, action) => {
-            state.habits = state.habits.filter(habit => habit.id !== action.payload);
+            state.habits = state.habits.filter(habit => habit._id !== action.payload);
         }
+    },
+
+    extraReducers: (builder) => {
+        builder.addCase(fetchHabitsThunk.fulfilled, (state, action) => {
+            state.habits =Array.isArray (action.payload) ? action.payload : [];
+        }).addCase(markAsDoneThunk.fulfilled, (state, action) => {
+            const habitId = action.meta.arg;
+             if (!state.status[habitId]) {
+                 state.status[habitId] = "idle"; // Establecer un valor predeterminado
+             }
+            state.status[action.meta.arg] = "success";
+            state.error[action.meta.arg] = null;
+        }).addCase(markAsDoneThunk.rejected, (state, action) => {
+            if (!state.status[habitId]) {
+                state.status[habitId] = "idle"; // Establecer un valor predeterminado
+            }
+            state.status[action.meta.arg] = "failed";
+            state.error[action.meta.arg] = action.payload as string;
+        });
     }
 });
 
